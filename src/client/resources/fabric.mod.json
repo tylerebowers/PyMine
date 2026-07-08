@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "pymine",
+	"version": "0.1.0",
+	"name": "Pymine",
+	"description": "HTTP control API for RL agents: camera, keys, mouse, cursor, screenshots.",
+	"authors": ["tylerebowers"],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["com.tylerebowers.client.PymineClient"]
+	},
+	"mixins": [
+		{
+			"config": "pymine.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.0",
+		"minecraft": "26.2"
+	}
+}

@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"package": "com.tylerebowers.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"MinecraftMixin",
+		"ScreenCursorMixin",
+		"MouseHandlerAccess",
+		"KeyboardHandlerAccess",
+		"KeyMappingAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
