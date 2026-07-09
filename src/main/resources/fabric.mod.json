@@ -2,14 +2,14 @@
 	"schemaVersion": 1,
 	"id": "pymine",
 	"version": "${version}",
-	"name": "pymine",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "PyMine",
+	"description": "Minecraft API controller for self learning models",
 	"authors": [
-		"Me!"
+		"Tylerebowers"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://tylerebowers.com/",
+		"sources": "https://github.com/tylerebowers/PyMine"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/pymine/icon.png",
