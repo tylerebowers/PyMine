@@ -10,6 +10,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
+import net.minecraft.stats.StatType;
+import net.minecraft.stats.StatsCounter;
 import net.minecraft.util.Mth;
 import org.lwjgl.glfw.GLFW;
 
@@ -19,6 +23,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -55,6 +60,12 @@ public final class PymineController {
     private final Map<String, Boolean> held = new ConcurrentHashMap<>();
     private final Map<String, Integer> timedPresses = new ConcurrentHashMap<>();
 
+    /** While true, real keyboard/mouse input to the game window is discarded. */
+    private volatile boolean inputLocked = false;
+    /** Set (render thread only) while WE are injecting synthetic events, so the
+     * lock mixins can tell API input apart from the user's physical input. */
+    private boolean injecting = false;
+
     private static final Map<String, Integer> GLFW_CODES = new HashMap<>();
 
     static {
@@ -81,6 +92,14 @@ public final class PymineController {
         if (!initialized) {
             initialized = true;
             mc.options.pauseOnLostFocus = false;
+        }
+
+        // Escape hatch: physical PAUSE/BREAK key always unlocks user input,
+        // even though every normal key event is being discarded. Uses GLFW's
+        // cached key state directly, so it works without the event callbacks.
+        if (inputLocked && GLFW.glfwGetKey(mc.getWindow().handle(),
+                GLFW.GLFW_KEY_PAUSE) == GLFW.GLFW_PRESS) {
+            inputLocked = false;
         }
 
         boolean screenOpen = currentScreen() != null;
@@ -139,6 +158,21 @@ public final class PymineController {
         });
     }
 
+    /** Lock or unlock the user's physical keyboard/mouse input to the game
+     * window. API-driven input keeps working either way. */
+    public void setInputLocked(boolean locked) {
+        inputLocked = locked;
+    }
+
+    public boolean isInputLocked() {
+        return inputLocked;
+    }
+
+    /** Called by the input-lock mixins for every real GLFW input event. */
+    public boolean shouldBlockUserInput() {
+        return inputLocked && !injecting;
+    }
+
     /**
      * Camera control. Pitch is clamped to Minecraft's [-90, 90] range
      * (straight up / straight down); yaw is free and wraps.
@@ -187,8 +221,13 @@ public final class PymineController {
             }
             targetGuiX = Mth.clamp(targetGuiX, 0, mc.getWindow().getGuiScaledWidth() - 1);
             targetGuiY = Mth.clamp(targetGuiY, 0, mc.getWindow().getGuiScaledHeight() - 1);
-            ((MouseHandlerAccess) mc.mouseHandler).pymine$onMove(
-                    mc.getWindow().handle(), targetGuiX * scale, targetGuiY * scale);
+            injecting = true;
+            try {
+                ((MouseHandlerAccess) mc.mouseHandler).pymine$onMove(
+                        mc.getWindow().handle(), targetGuiX * scale, targetGuiY * scale);
+            } finally {
+                injecting = false;
+            }
             return null;
         });
     }
@@ -235,6 +274,54 @@ public final class PymineController {
         }
     }
 
+    /**
+     * Snapshot of the player's statistics (the esc -> Statistics data).
+     * Only non-zero entries are included. Stats live on the server, so this
+     * first sends a REQUEST_STATS packet (what the vanilla stats screen does)
+     * and waits waitMs for the reply to land before reading.
+     */
+    public Map<String, Map<String, Integer>> stats(int waitMs) {
+        onGameThread(() -> {
+            if (mc.getConnection() == null || mc.player == null) {
+                throw new IllegalStateException("No player (not in a world yet)");
+            }
+            mc.getConnection().send(new ServerboundClientCommandPacket(
+                    ServerboundClientCommandPacket.Action.REQUEST_STATS));
+            return null;
+        });
+        try {
+            Thread.sleep(Math.max(0, Math.min(waitMs, 5000)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return onGameThread(() -> {
+            LocalPlayer player = mc.player;
+            if (player == null) {
+                throw new IllegalStateException("No player (not in a world yet)");
+            }
+            StatsCounter counter = player.getStats();
+            Map<String, Map<String, Integer>> out = new TreeMap<>();
+            for (StatType<?> type : BuiltInRegistries.STAT_TYPE) {
+                Map<String, Integer> section = collectStats(type, counter);
+                if (!section.isEmpty()) {
+                    out.put(String.valueOf(BuiltInRegistries.STAT_TYPE.getKey(type)), section);
+                }
+            }
+            return out;
+        });
+    }
+
+    private <T> Map<String, Integer> collectStats(StatType<T> type, StatsCounter counter) {
+        Map<String, Integer> section = new TreeMap<>();
+        for (T value : type.getRegistry()) {
+            int v = counter.getValue(type, value);
+            if (v != 0) {
+                section.put(String.valueOf(type.getRegistry().getKey(value)), v);
+            }
+        }
+        return section;
+    }
+
     public Map<String, Object> state() {
         return onGameThread(() -> {
             Map<String, Object> out = new HashMap<>();
@@ -256,6 +343,7 @@ public final class PymineController {
                 out.put("alive", p.isAlive());
             }
             out.put("held", held.keySet().toArray(new String[0]));
+            out.put("input_locked", inputLocked);
             return out;
         });
     }
@@ -270,9 +358,14 @@ public final class PymineController {
         if (key.equals("ml") || key.equals("mr")) {
             int button = key.equals("ml") ? GLFW.GLFW_MOUSE_BUTTON_LEFT : GLFW.GLFW_MOUSE_BUTTON_RIGHT;
             if (currentScreen() != null) {
-                ((MouseHandlerAccess) mc.mouseHandler).pymine$onButton(
-                        mc.getWindow().handle(), new MouseButtonInfo(button, 0),
-                        down ? GLFW.GLFW_PRESS : GLFW.GLFW_RELEASE);
+                injecting = true;
+                try {
+                    ((MouseHandlerAccess) mc.mouseHandler).pymine$onButton(
+                            mc.getWindow().handle(), new MouseButtonInfo(button, 0),
+                            down ? GLFW.GLFW_PRESS : GLFW.GLFW_RELEASE);
+                } finally {
+                    injecting = false;
+                }
             } else {
                 KeyMapping km = key.equals("ml") ? mc.options.keyAttack : mc.options.keyUse;
                 km.setDown(down);
@@ -316,10 +409,15 @@ public final class PymineController {
     }
 
     private void injectKey(int glfwCode, boolean down) {
-        ((KeyboardHandlerAccess) mc.keyboardHandler).pymine$keyPress(
-                mc.getWindow().handle(),
-                down ? GLFW.GLFW_PRESS : GLFW.GLFW_RELEASE,
-                new KeyEvent(glfwCode, 0, 0));
+        injecting = true;
+        try {
+            ((KeyboardHandlerAccess) mc.keyboardHandler).pymine$keyPress(
+                    mc.getWindow().handle(),
+                    down ? GLFW.GLFW_PRESS : GLFW.GLFW_RELEASE,
+                    new KeyEvent(glfwCode, 0, 0));
+        } finally {
+            injecting = false;
+        }
     }
 
     private void bumpClick(KeyMapping km) {

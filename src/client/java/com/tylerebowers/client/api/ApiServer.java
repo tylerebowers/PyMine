@@ -87,6 +87,28 @@ public final class ApiServer {
             return null;
         }));
 
+        server.createContext("/stats", exchange -> handle(exchange, () -> {
+            int waitMs = 250;
+            String query = exchange.getRequestURI().getQuery();
+            if (query != null) {
+                for (String part : query.split("&")) {
+                    if (part.startsWith("wait=")) {
+                        waitMs = Integer.parseInt(part.substring(5));
+                    }
+                }
+            }
+            sendJson(exchange, 200, GSON.toJson(controller.stats(waitMs)));
+            return null;
+        }));
+
+        server.createContext("/lock", exchange -> handle(exchange, () -> {
+            JsonObject body = readBody(exchange);
+            boolean locked = body.has("locked") && body.get("locked").getAsBoolean();
+            controller.setInputLocked(locked);
+            ok(exchange);
+            return null;
+        }));
+
         server.createContext("/release_all", exchange -> handle(exchange, () -> {
             controller.releaseAll();
             ok(exchange);

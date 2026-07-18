@@ -7,7 +7,9 @@
 		"ScreenCursorMixin",
 		"MouseHandlerAccess",
 		"KeyboardHandlerAccess",
-		"KeyMappingAccessor"
+		"KeyMappingAccessor",
+		"InputLockMixin$MouseLock",
+		"InputLockMixin$KeyboardLock"
 	],
 	"injectors": {
 		"defaultRequire": 1

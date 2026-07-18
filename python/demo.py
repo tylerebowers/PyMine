@@ -118,6 +118,18 @@ def main() -> None:
     mc.q()
     time.sleep(0.4)
 
+    print("== world statistics (esc -> Statistics) ==")
+    stats = mc.stats()
+    print(f"  {len(stats)} stat sections")
+    print(stats)
+
+    print("== input lock: user input off for 3s (PAUSE key = panic unlock) ==")
+    mc.lock(True)
+    print(f"  input_locked = {mc.state()['input_locked']} — try clicking the game window, it's ignored")
+    time.sleep(3.0)
+    mc.lock(False)
+    print(f"  input_locked = {mc.state()['input_locked']}")
+
     print("== cleanup ==")
     mc.release_all()
     snap("frame_final.png")

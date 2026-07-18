@@ -108,6 +108,10 @@ class Gamepad:
                   command=cmd(self.release_all)).pack(side="left", padx=8)
         tk.Button(bar, text="save frame", takefocus=0,
                   command=cmd(self.save_frame)).pack(side="left", padx=2)
+        self.lock_var = tk.BooleanVar()
+        tk.Checkbutton(bar, text="lock user input", variable=self.lock_var, takefocus=0,
+                       command=cmd(lambda: self.cmd_queue.put(("lock", self.lock_var.get()))),
+                       bg="#1e1e1e", fg="#ffcc66", selectcolor="#333").pack(side="left", padx=8)
 
         # Defense in depth: even if one of these ever gets keyboard focus,
         # never let Space/Return invoke it — those are gameplay keys.
@@ -196,6 +200,8 @@ class Gamepad:
                         self.mc.cursor(cmd[1], cmd[2], relative=False)
                     case "release_all":
                         self.mc.release_all()
+                    case "lock":
+                        self.mc.lock(cmd[1])
                 self.last_err = ""
             except Exception as e:  # keep the pad alive on errors
                 self.last_err = str(e)
@@ -330,6 +336,8 @@ class Gamepad:
                 self.last_err = f"frame decode: {e}"
 
         st = self.state
+        if "input_locked" in st:
+            self.lock_var.set(bool(st["input_locked"]))
         menu = f"MENU:{st.get('screen')}" if st.get("in_menu") else "in-game"
         held = "+".join(sorted(self.held)) or "-"
         err = f"   ERR: {self.last_err}" if self.last_err else ""

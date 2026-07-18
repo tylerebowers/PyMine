@@ -103,6 +103,22 @@ class Minecraft:
         """Release every held control (call between RL episodes)."""
         self._post("/release_all", {})
 
+    def stats(self, wait: float = 0.25) -> dict[str, dict[str, int]]:
+        """World/player statistics (the esc -> Statistics data) as nested
+        dicts, e.g. {"minecraft:custom": {"minecraft:jump": 12, ...},
+        "minecraft:mined": {"minecraft:stone": 3}, ...}. Only non-zero
+        entries appear. Stats live on the server; `wait` is how long the mod
+        waits (seconds) after requesting fresh values before reading them."""
+        return json.loads(self._request(f"/stats?wait={int(wait * 1000)}"))
+
+    def lock(self, locked: bool = True) -> None:
+        """Lock (True) or unlock (False) the user's physical keyboard/mouse
+        on the game window, so nobody can disturb the agent by clicking or
+        typing into Minecraft. API input keeps working while locked. Panic
+        unlock without the API: press the PAUSE/BREAK key in the game
+        window."""
+        self._post("/lock", {"locked": locked})
+
     # ---------------------------------------------------------------- inputs
 
     def key(self, key: str, hold: Optional[bool] = None, ticks: Optional[int] = None) -> None:
